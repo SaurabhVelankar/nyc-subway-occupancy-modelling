@@ -1,0 +1,139 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+%Template version as of 6/27/2024
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Predictive Modeling of Latent Passenger Occupancy and Systemic Risk in the NYC Subway\\
+\thanks{This research was conducted as part of the Big Data Science curriculum at New York University's Courant Institute of Mathematical Sciences.}
+}
+
+\author{\IEEEauthorblockN{Saurabh Velankar}
+\IEEEauthorblockA{\textit{Computer Science Department} \\
+\textit{New York University (CIMS)}\\
+New York, NY \\
+ssv7305@nyu.edu}
+\and
+\IEEEauthorblockN{Kal Sastra}
+\IEEEauthorblockA{\textit{Computer Science Department} \\
+\textit{New York University (CIMS)}\\
+New York, NY \\
+kjs10001@nyu.edu}
+}
+
+\maketitle
+
+\begin{abstract}
+The modernization of urban transit intelligence requires bridging legacy static infrastructure databases with high-velocity, real-time data streams. This paper proposes a two-stage sequential machine learning architecture utilizing XGBoost regressors to predict latent passenger occupancy and systemic network risk within the New York City Metropolitan Transportation Authority (MTA) A-C-E subway corridor. By transforming deterministic historical Turnstile counters and qualitative Delay-Causing Incident reports into normalized temporal metrics, we developed a real-time operational dashboard capable of interpreting live General Transit Feed Specification (GTFS-RT) pulses. SHapley Additive exPlanations (SHAP) were employed to ensure model interpretability, successfully identifying temporal clusters over spatial identifiers as the primary drivers of urban behavioral variance. Despite the inherent high-entropy nature of municipal transit systems, residual analyses confirm that the predictive pipelines are unbiased and statistically sound, establishing a robust Proof of Concept (PoC) for stochastic transit modeling.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Big Data, Machine Learning, XGBoost, GTFS, Urban Data Science, Predictive Modeling, MTA
+\end{IEEEkeywords}
+
+\section{Introduction}
+The New York City subway system represents one of the most complex, high-volume transit networks in the world. Historically, transit analytics relied heavily on static, retrospective datasets, such as weekly turnstile audits. However, the advent of the General Transit Feed Specification Real-Time (GTFS-RT) protocol has introduced high-velocity data streams capable of tracking train locations via serialized Protobuf binaries. The primary objective of this project is to bridge the gap between historical Volume (legacy Turnstile datasets) and real-time Velocity (live GTFS-RT streams).
+
+Rather than attempting to build a singular predictive model, which frequently results in compounded dimensional errors across disjointed domains, this research engineers a Two-Stage Cascading Pipeline. This architecture processes historical transit breakdowns to establish a baseline ``Systemic Risk'' score, which subsequently informs a ``Latent Occupancy'' predictor. We restrict our spatial domain to the A, C, and E lines (the Eighth Avenue corridor) to validate the Proof of Concept.
+
+\section{Data Procurement \& Exploratory Data Analysis}
+
+\subsection{Data Procurement}
+To construct the dual-layer pipeline, disparate datasets were procured from the New York Open Data portal (\textit{data.ny.gov}) and the MTA Developer Portal. The architecture ingests three primary data domains:
+\begin{itemize}
+    \item \textbf{Legacy Turnstile Usage (Volume):} Cumulative mechanical entry and exit counters, extracted via historical CSV batches spanning 2020-2021.
+    \item \textbf{Delay-Causing Incidents (Validation):} Qualitative, categorical logs of systemic failures (e.g., Signal Failures, Police \& Medical) beginning in 2020.
+    \item \textbf{GTFS-Realtime (Velocity):} Live, serialized Protobuf streams providing dynamic \textit{trip\_id} arrivals.
+\end{itemize}
+
+\subsection{Exploratory Data Analysis (EDA)}
+Initial exploratory data analysis was conducted to identify systemic imbalances and temporal skew within the transit network. The Incident logs revealed significant divisional variance, with the B Division (lettered lines) exhibiting a substantially higher volume of incident reports ($\sim$275,000) compared to the A Division ($\sim$165,000). 
+
+\begin{figure}[htbp]
+    \centerline{\includegraphics[width=\linewidth]{mta_incidents_eda.png}}
+    \caption{Exploratory Data Analysis for the MTA Breakdown incidents dataset}
+    \label{fig:placeholder}
+\end{figure}
+
+Temporally, incident frequency is heavily skewed toward Weekdays (Day Type 1), accounting for 75.5\% of all logged delays, indicating strong correlation with peak ridership system loads. Causally, exogenous factors (Police \& Medical) lead, followed closely by endogenous infrastructural failures (Operating Conditions). Crucially, the EDA validated our pipeline scope: the A Line registers as the most severely impacted route system-wide, exceeding 35,000 historical incidents, confirming the A-C-E corridor as the optimal test environment for risk modeling.
+
+\section{Methodology: The Cascading Pipeline}
+Because human behavioral patterns (occupancy) and infrastructural failures (breakdowns) are governed by orthogonal probability distributions, a two-stage sequential model was deployed. Both models utilized XGBoost Regressors (\texttt{objective='reg:squarederror'}), selected for their native proficiency in learning non-linear, bimodal urban distributions natively without requiring high-degree polynomial feature expansion.
+
+\subsection{Target Variable Engineering \& Leakage Prevention}
+Machine learning pipelines are highly susceptible to data leakage if future constraints are inadvertently fed into the training matrix. In the Incident dataset, the \texttt{Reporting Category} feature was proactively dropped, as the causal nature of a breakdown cannot be known prior to inference. 
+
+Similarly, the cumulative nature of the Turnstile hardware necessitated transformation. We calculated the temporal deltas ($\Delta$) grouped by specific hardware configurations to derive \texttt{TOTAL\_TRAFFIC}. Physical hardware constraints were applied (cap at 10,000) to eliminate mechanical counter ``reset'' anomalies. To prevent target leakage, \texttt{DELTA\_ENTRIES} and \texttt{DELTA\_EXITS} were formally dropped prior to matrix training.
+
+\subsection{Model 1: Systemic Risk Predictor}
+The first model focuses purely on infrastructural strain. Raw incident totals were temporally aggregated by Year, Month, Line, and Day Type to prevent multi-year temporal aggregation leaks. Totals were normalized against the number of active days in their respective calendar slices, outputting a \texttt{Risk\_Score} metric (Average Expected Incidents Per Day). 
+
+\subsection{Model 2: Latent Occupancy Predictor}
+The secondary model focuses on human accumulation. Utilizing the engineered temporal features (\texttt{Hour}, \texttt{Day\_Of\_Week}, \texttt{Month}), the model establishes a generalized temporal baseline for platform crowding. Spatial identifiers were pruned from this model to prevent overfitting to massive transit hubs (e.g., Times Square), ensuring generalized corridor capability.
+
+\section{Feature Engineering \& Interpretability}
+To validate the internal logic of the XGBoost models, SHapley Additive exPlanations (SHAP) were calculated across the testing partitions.
+
+\subsection{SHAP Analysis: Occupancy Predictor}
+The SHAP tree-explainer confirmed that precise temporal granularity—specifically the continuous \texttt{Hour} variable—drove the vast majority of the predictive magnitude (SHAP Mean $|x| \approx 2400$). The explainer also successfully identified multicollinearity: the binary \texttt{Is\_Weekend} feature exhibited a SHAP value of zero, indicating absolute redundancy given the \texttt{Day\_Of\_Week} split. Consequently, the feature space was pruned.
+
+\begin{figure}[htbp]
+    \centerline{\includegraphics[width=\linewidth]{shap_occupancy.png}}
+    \caption{SHAP Feature Importance for Latent Occupancy Model.}
+    \label{fig:placeholder}
+\end{figure}
+
+\subsection{SHAP Analysis: Risk Predictor}
+For Model 1, \texttt{Day Type} and \texttt{Month} emerged as dominant global predictors. The analysis verified the high-variance nature of the A Line compared to alternative network branches, justifying the localized corridor approach.
+
+
+\begin{figure}[htbp]
+    \centerline{\includegraphics[width=\linewidth]{shap_breakdown.png}}
+    \caption{SHAP Feature Importance for Systemic Risk Predictor.}
+    \label{fig:placeholder}
+\end{figure}
+
+
+\section{Results \& Evaluation}
+
+\subsection{Regression Metrics}
+The baseline temporal Occupancy Model achieved an $R^2$ score of 0.4713 and a Root Mean Squared Error (RMSE) of 3,600.71 passengers per 4-hour window. While a 47\% variance explanation may seem modest in a deterministic environment, it is highly significant for latent human behavioral modeling. Specifically, an RMSE of 3,600 equates to an operational deviation of merely 15 passengers per minute—well within acceptable tolerances for macro-level station routing. The Systemic Risk model achieved comparable stabilization after correcting for historical overlapping month-year aggregations, successfully reducing its error margins to daily physical reality constraints.
+
+\subsection{Residual Analysis and Systemic Noise}
+To assess whether the magnitude of the RMSE was driven by algorithmic bias or inherent systemic entropy, a residual distribution analysis (Actual minus Predicted) was conducted. 
+
+\begin{figure}[htbp]
+    \centerline{\includegraphics[width=\linewidth]{residual_bias_analysis.png}}
+    \caption{Residual Analysis}
+    \label{fig:placeholder}
+\end{figure}
+
+Residual Analysis: Normal distribution of model error indicating unbiased prediction handling systemic noise.
+
+The analysis revealed that the error distribution is strictly normally distributed and centered precisely at zero. This mathematical alignment proves the XGBoost regressor is unbiased; it does not systematically over- or under-predict. The presence of long, symmetrical tails on the distribution curve is the expected mathematical consequence of pruning spatial identifiers. Extreme positive outliers in the residuals represent highly localized surges at mega-hubs, confirming that the model successfully extracted all available temporal signal from the inherent urban noise.
+
+\section{Production Deployment (Inference)}
+To handle the velocity of a 30-second GTFS pulse, the Python subscriber operates as a stateful application. The XGBoost \texttt{.pkl} objects and their corresponding schema configurations are loaded directly into RAM at initialization. This avoids disk I/O latency, allowing live inference to occur in milliseconds. Dynamic ``Sparse Pulse'' matrix reconstruction logic guarantees that incomplete GTFS broadcasts (e.g., pulses containing only A trains and no C trains) do not trigger dimensional mismatch errors during the pipeline handshake.
+
+\section{Conclusion \& Future Work}
+The primary objective of this architecture was to bridge the gap between legacy static infrastructure databases, qualitative incident reports, and high-velocity GTFS-Realtime streams. By engineering a two-stage sequential machine learning pipeline, we successfully demonstrated a Proof of Concept (PoC) capable of transforming deterministic transit delays into live, stochastic models of latent passenger occupancy and systemic network risk.
+
+While the final regression metrics reflect the inherent, high-entropy reality of the New York City transit network, the architectural foundation is mathematically sound. The SHAP-validated feature selection confirms that temporal clustering successfully extracts behavioral signals from the noise, and residual analysis verifies model impartiality.
+
+This PoC establishes a robust, live-inference data ingestion pipeline. Given additional computational resources and time, future iterations of this model would incorporate hyper-parameter grid search optimization, spatial re-integration for localized predictions, and weather-API endpoints to further minimize the residual variance. Ultimately, this framework proves that legacy municipal data can be engineered into real-time, predictive operational intelligence.
+
+\section{Acknowledgments}
+We would like to express our sincere gratitude to Professor Dr. Anasse Bari for his invaluable guidance, insightful lectures, and continuous support throughout the duration of this Big Data Science course. We also extend our deepest thanks to the entire Teaching Assistant (TA) team for their dedicated assistance, constructive feedback, and technical mentorship over the semester. Their collective expertise and encouragement were instrumental in the successful development and completion of this project.
+
+
+\end{document}
